@@ -218,13 +218,14 @@ runs:
         echo "aws_secret_access_key=$awsSecretAccessKey" >> "$GITHUB_OUTPUT"
         echo "aws_session_token=$awsSessionToken" >> "$GITHUB_OUTPUT"
 
-    - name: "Configure AWS Credentials"
+    - name: "Set Credentials in Environment"
       if: ${{ inputs.set-in-environment == 'true' }}
       shell: bash
       run: |
-        aws configure set aws_access_key_id ${{ steps.authenticate.outputs.aws_access_key_id }}
-        aws configure set aws_secret_access_key ${{ steps.authenticate.outputs.aws_secret_access_key }}
-        aws configure set aws_session_token ${{ steps.authenticate.outputs.aws_session_token }}
+        echo "AWS_ACCESS_KEY_ID=${{ steps.authenticate.outputs.aws_access_key_id }}" >> "$GITHUB_ENV"
+        echo "AWS_SECRET_ACCESS_KEY=${{ steps.authenticate.outputs.aws_secret_access_key }}" >> "$GITHUB_ENV"
+        echo "AWS_SESSION_TOKEN=${{ steps.authenticate.outputs.aws_session_token }}" >> "$GITHUB_ENV"
+        echo "AWS_REGION=${{ steps.aws_region.outputs.value }}" >> "$GITHUB_ENV"
 
     - name: "Set as Profile"
       if: ${{ inputs.set-as-profile != '' }}
