@@ -1,5 +1,8 @@
 name: Cognito Identity Pool Auth
 description: Use GitHub Actions OIDC access token and get temporary AWS Credentials from an Amazon Cognito Identity Pool.
+branding:
+  icon: chevrons-right
+  color: blue
 inputs:
   cognito-identity-pool-id:
     required: true
