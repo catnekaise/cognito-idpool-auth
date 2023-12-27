@@ -1,51 +1,153 @@
-name: Cognito Identity Auth
-description: Use GitHub Actions OIDC access token and get temporary AWS Credentials from an Amazon Cognito Identity Pool using the Enhanced (Simplified) AuthFlow.
+name: Cognito Identity Pool Auth
+description: Use GitHub Actions OIDC access token and get temporary AWS Credentials from an Amazon Cognito Identity Pool.
 inputs:
-  audience:
-    default: "cognito-identity.amazonaws.com"
-    description: "Audience"
-  aws-account-id:
-    required: false
-    description: "AWS Account ID"
-    default: ""
-  aws-region:
-    required: false
-    description: "AWS Region"
-    default: ""
   cognito-identity-pool-id:
     required: true
     description: "Cognito Identity Pool ID"
-  custom-role-arn:
+  auth-flow:
+    required: true
+    description: "Either basic or enhanced"
+  audience:
+    default: "cognito-identity.amazonaws.com"
     required: false
+    description: "Audience"
+  aws-account-id:
     default: ""
-    description: "Custom Role Arn"
-  set-as-profile:
     required: false
-    default: "no"
+    description: "AWS Account ID"
+  aws-region:
+    default: ""
+    required: false
+    description: "AWS Region"
+  role-arn:
+    default: ""
+    required: false
+    description: "Custom Role Arn"
+  role-duration-seconds:
+    description: "Role duration in seconds. (Only available if using AuthFlow basic)"
+    required: false
+    default: "3600"
+  role-session-name:
+    required: false
+    default: "GitHubActions"
+    description: "Role Session Name (Only available if using AuthFlow basic)"
+  set-as-profile:
+    default: ""
+    required: false
     description: "Set credentials as profile with provided name"
   set-in-environment:
-    required: false
     default: ""
+    required: false
     description: "Set credentials as environment variables"
+  chain-role-arn:
+    default: ""
+    required: false
+    description: "Arn of Role when performing role chaining"
+  chain-pass-claims:
+    default: ""
+    required: false
+    description: "Pass claims"
+  chain-set-as-profile:
+    default: ""
+    required: false
+    description: "Set credentials as profile with provided name"
+  chain-set-in-environment:
+    default: ""
+    required: false
+    description: "Set role chained credentials as environment variables"
+  chain-role-duration-seconds:
+    description: "Role duration in seconds for chained role"
+    required: false
+    default: "3600"
+  chain-role-session-name:
+    required: false
+    default: "GitHubActions"
+    description: "Role Session Name for chained role session"
 outputs:
   aws_access_key_id:
     description: "AWS Access Key Id"
-    value: ${{ steps.authenticate.outputs.aws_access_key_id }}
+    value: ${{ steps.output.outputs.aws_access_key_id }}
   aws_secret_access_key:
     description: "AWS Secret Access Key"
-    value: ${{ steps.authenticate.outputs.aws_secret_access_key }}
+    value: ${{ steps.output.outputs.aws_secret_access_key }}
   aws_session_token:
     description: "AWS Session Name"
-    value: ${{ steps.authenticate.outputs.aws_session_token }}
+    value: ${{ steps.output.outputs.aws_session_token }}
   aws_region:
     description: "AWS Region"
     value: ${{ steps.aws_region.outputs.value }}
+  cognito_identity_oidc_access_token:
+    description: "Cognito Identity OIDC Access Token"
+    value: ${{ steps.output.outputs.oidc_token }}
 runs:
   using: composite
   steps:
+    - name: "Validation"
+      shell: bash
+      env:
+        AUTH_FLOW: "${{ inputs.auth-flow }}"
+        COGNITO_POOL_ID: "${{ inputs.cognito-identity-pool-id }}"
+        ROLE_ARN: "${{ inputs.role-arn }}"
+        CHAIN_ROLE_ARN: "${{ inputs.chain-role-arn }}"
+        SET_IN_ENVIRONMENT: "${{ inputs.set-in-environment }}"
+        CHAIN_SET_IN_ENVIRONMENT: "${{ inputs.chain-set-in-environment }}"
+        AUDIENCE: "${{ inputs.audience }}"
+        PROFILE_NAME: "${{ inputs.set-as-profile }}"
+        CHAIN_PROFILE_NAME: "${{ inputs.chain-set-as-profile }}"
+      run: |
+        
+        if [ "$AUTH_FLOW" != "basic" ] && [ "$AUTH_FLOW" != "enhanced" ]; then
+          echo "AuthFlow needs to either be set to 'basic' or 'enhanced'."
+          exit 1
+        fi
+        
+        if echo "$COGNITO_POOL_ID" | grep -Eqv "^[a-z]{2}-[a-z]{4,9}-[0-9]:[0-9a-f-]+$"; then
+          echo "Value for Cognito Pool Id is invalid"
+          exit 1
+        fi
+        
+        if [ ! -z "$ROLE_ARN" ] && echo "$ROLE_ARN" | grep -Eqv "^arn:aws:iam::[0-9]{9,12}:role(\/[a-zA-Z0-9_+=,.@\/-]{1,510}\/|\/)[a-zA-z0-9_+=,.@-]{1,64}$"; then
+          echo "Value for role-arn is invalid"
+          exit 1
+        fi
+        
+        if [ ! -z "$CHAIN_ROLE_ARN" ] && echo "$CHAIN_ROLE_ARN" | grep -Eqv "^arn:aws:iam::[0-9]{9,12}:role(\/[a-zA-Z0-9_+=,.@\/-]{1,510}\/|\/)[a-zA-z0-9_+=,.@-]{1,64}$"; then
+          echo "Value for Role To Assume is invalid"
+          exit 1
+        fi
+        
+        if [ "$SET_IN_ENVIRONMENT" == "true" ] && [ "$CHAIN_SET_IN_ENVIRONMENT" == "true" ]; then
+          echo "Cannot set both set-in-environment and chain-set-in-environment to 'true'."
+          exit 1
+        fi
+        
+        if echo "$AUDIENCE" | grep -Eqv "^[a-zA-Z0-9.-]+$"; then
+          echo "Value for audience is not valid"
+          exit 1
+        fi
+        
+        if [ ! -z "$PROFILE_NAME" ] && echo "$PROFILE_NAME" | grep -Eqv "^[a-zA-Z0-9_-]+$"; then
+          echo "Value for profile name is not valid"
+          exit 1
+        fi
+        
+        if [ ! -z "$CHAIN_PROFILE_NAME" ] && [ -z "$CHAIN_ROLE_ARN" ]; then
+          echo "Only provide a profile name for the role chained credentials when role chaining."
+          exit 1
+        fi
+        
+        if [ ! -z "$CHAIN_PROFILE_NAME" ] && echo "$CHAIN_PROFILE_NAME" | grep -Eqv "^[a-zA-Z0-9_-]+$"; then
+          echo "Value for chain profile name is not valid"
+          exit 1
+        fi
+
     - id: aws_account_id
       name: "Resolve AWS Account ID"
       shell: bash
+      env:
+        ROLE_ARN: "${{ inputs.role-arn }}"
+        INPUT_AWS_ACCOUNT_ID: "${{ inputs.aws-account-id }}"
+        AUTH_FLOW: "${{ inputs.auth-flow }}"
       run: |
         value=""
         
@@ -57,47 +159,59 @@ runs:
         # If CK_COGNITO_AWS_ACCOUNT_ID exist in environment, use it as start value
         if [ ! -z "${CK_COGNITO_AWS_ACCOUNT_ID}" ]; then
           value="${CK_COGNITO_AWS_ACCOUNT_ID}"
-        fi        
+        fi
         
-        # if input aws-account-id has been provided, use it
-        if [ ! -z "${{ inputs.aws-account-id }}" ]; then
-          value="${{ inputs.aws-account-id }}"
+        # If input aws-account-id has been provided, use it
+        if [ ! -z "${INPUT_AWS_ACCOUNT_ID}" ]; then
+          value="$INPUT_AWS_ACCOUNT_ID"
+        fi
+        
+        # If no value yet, AuthFlow is enhanced and a custom role arn is used, then parse role-arn for account id
+        if [ -z "$value" ] && [ ! -z "${ROLE_ARN}" ] && [ "$AUTH_FLOW" == "enhanced" ]; then
+          value="${ROLE_ARN#*::}"
+          value="${value%%:*}"
         fi
         
         # if value has not been set, exit
         if [ -z "$value" ]; then
           echo "Unable to resolve AWS_ACCOUNT_ID"
           exit 1
-        fi        
+        fi
         
         # if value is not a valid aws account id, exit
         if echo "$value" | grep -Eqv "^[0-9]{9,12}$"; then
           echo "Resolved value for AWS Account Id is invalid"
           exit 1
-        fi        
+        fi
 
         echo "value=$value" >> "$GITHUB_OUTPUT"
 
     - id: aws_region
       name: "Resolve AWS Region"
       shell: bash
+      env:
+        INPUT_AWS_REGION: "${{ inputs.aws-region }}"
       run: |
         value=""
         
         if [ ! -z "${AWS_DEFAULT_REGION}" ]; then
-          value="${AWS_DEFAULT_REGION}"
+          value="$AWS_DEFAULT_REGION"
+        fi
+        
+        if [ ! -z "${AWS_REGION}" ]; then
+          value="$AWS_REGION"
         fi
         
         if [ ! -z "${CK_COGNITO_AWS_REGION}" ]; then
-          value="${CK_COGNITO_AWS_REGION}"
-        fi        
+          value="$CK_COGNITO_AWS_REGION"
+        fi
         
-        if [ ! -z "${{ inputs.aws-region }}" ]; then
-          value="${{ inputs.aws-region }}"
+        if [ ! -z "${INPUT_AWS_REGION}" ]; then
+          value="$INPUT_AWS_REGION"
         fi
         
         if [ -z "$value" ]; then
-          echo "Unable to resolve AWS Region"
+          echo "Unable to resolve what AWS Region to use"
           exit 1
         fi
         
@@ -109,102 +223,165 @@ runs:
 
         echo "value=$value" >> "$GITHUB_OUTPUT"
 
-    - id: cognito_identity_pool_id
-      name: "Resolve Cognito Identity Pool ID"
+    - id: role_session_name
+      name: "Resolve Role Session Name"
       shell: bash
+      env:
+        ROLE_SESSION_NAME: "${{ inputs.role-session-name }}"
       run: |
-        value="${{ inputs.cognito-identity-pool-id }}"
-
-        if echo "$value" | grep -Eqv "^[a-z]{2}-[a-z]{4,9}-[0-9]:[0-9a-f-]+$"; then
-          echo "Value for Cognito Pool Id is invalid"
-          exit 1
-        fi
-        
-        echo "value=$value" >> "$GITHUB_OUTPUT"
-
-    - id: custom_role_arn
-      name: "Resolve Custom Role Arn"
-      shell: bash
-      run: |
-        value="${{ inputs.custom-role-arn }}"
+        value="$ROLE_SESSION_NAME"
         
         if [ -z "$value" ]; then
-          exit 0
+          value="GitHubActions"
         fi
 
-        if echo "$value" | grep -Eqv "^arn:aws:iam::[0-9]{9,12}:role/[a-zA-z0-9_+=,.@-]{1,64}$"; then
-          echo "Value for Custom Role Arn is invalid"
+        if echo "$value" | grep -Eqv "^[a-zA-Z0-9=,.@-]+$"; then
+          echo "Value for Role Session Name is invalid"
           exit 1
         fi
 
         echo "value=$value" >> "$GITHUB_OUTPUT"
 
-    - id: audience
-      name: "Resolve Audience"
+    - id: duration_seconds
+      name: "Resolve Duration Seconds"
       shell: bash
+      env:
+        ROLE_DURATION_SECONDS: "${{ inputs.role-duration-seconds }}"
       run: |
-        value="${{ inputs.audience }}"
+        value="$ROLE_DURATION_SECONDS"
         
         if [ -z "$value" ]; then
-          echo "Audience must be set"
+          value="3600"
+        fi
+        
+        if ((value < 900 || value > 43200)); then
+          echo "Value for Duration Seconds is invalid. Must be a number between 900 and 432000 (15 minutes and 12 hours)."
           exit 1
         fi
 
-        if echo "$value" | grep -Eqv "^[a-zA-Z0-9.-]+$"; then
-          echo "Resolved value for audience is invalid"
-          exit 1
-        fi
-        
         echo "value=$value" >> "$GITHUB_OUTPUT"
 
-    - id: profile
-      name: "Resolve Profile (if applicable)"
+    - id: chain_role_session_name
+      name: "Resolve Chained Role Session Name"
       shell: bash
+      env:
+        ROLE_SESSION_NAME: "${{ inputs.chain-role-session-name }}"
       run: |
-        value="${{ inputs.set-as-profile }}"
+        value="$ROLE_SESSION_NAME"
         
         if [ -z "$value" ]; then
-          exit 0
+          value="GitHubActions"
         fi
 
-        if echo "$value" | grep -Eqv "^[a-zA-Z0-9_-]+$"; then
-          echo "Value for profile name is invalid"
+        if echo "$value" | grep -Eqv "^[a-zA-Z0-9=,.@-]+$"; then
+          echo "Value for Role Session Name is invalid"
           exit 1
         fi
+
+        echo "value=$value" >> "$GITHUB_OUTPUT"
+
+    - id: chain_duration_seconds
+      name: "Resolve Chained Role Duration Seconds"
+      shell: bash
+      env:
+        ROLE_DURATION_SECONDS: "${{ inputs.chain-role-duration-seconds }}"
+      run: |
+        value="$ROLE_DURATION_SECONDS"
         
+        if [ -z "$value" ]; then
+          value="3600"
+        fi
+        
+        if ((value < 900 || value > 43200)); then
+          echo "Value for Duration Seconds is invalid. Must be a number between 900 and 432000 (15 minutes and 12 hours)."
+          exit 1
+        fi
+
         echo "value=$value" >> "$GITHUB_OUTPUT"
 
     - id: token
       name: "Get Access Token"
       shell: bash
       env:
-        AUDIENCE: "${{ steps.audience.outputs.value }}"
+        AUDIENCE: "${{ inputs.audience }}"
       run: |
         response=$(curl -sLS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE")
         token=$(echo "$response" | jq -r ".value")
         
         echo "::add-mask::$token"
-        
         echo "token=$token" >> "$GITHUB_OUTPUT"
 
-    - id: authenticate
-      name: "Authenticate"
+    - id: basic_auth
+      if: "${{ inputs.auth-flow == 'basic' }}"
+      name: "Perform Basic AuthFlow"
+      shell: bash
+      env:
+        ACCESS_TOKEN: "${{ steps.token.outputs.token }}"
+        AWS_ACCOUNT_ID: "${{ steps.aws_account_id.outputs.value }}"
+        AWS_REGION: "${{ steps.aws_region.outputs.value }}"
+        COGNITO_IDENTITY_POOL_ID: "${{ inputs.cognito-identity-pool-id }}"
+        DURATION_SECONDS: "${{ steps.duration_seconds.outputs.value }}"
+        ROLE_ARN: "${{ inputs.role-arn }}"
+        ROLE_SESSION_NAME: "${{ steps.role_session_name.outputs.value }}"
+      run: |
+        getIdResponse=$(aws cognito-identity get-id --identity-pool-id "$COGNITO_IDENTITY_POOL_ID" \
+        --account-id "$AWS_ACCOUNT_ID" \
+        --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
+        identityId=$(echo "$getIdResponse" | jq -rc '.IdentityId')
+
+        cognitoIdentityTokenResponse=$(aws cognito-identity get-open-id-token --identity-id "$identityId" \
+        --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
+        cognitoIdentityOidcAccessToken=$(echo "$cognitoIdentityTokenResponse" | jq -r '.Token')
+        
+        echo "::add-mask::$cognitoIdentityOidcAccessToken"
+        echo "oidc_token=$cognitoIdentityOidcAccessToken" >> "$GITHUB_OUTPUT"
+        
+        if [ -z "$ROLE_ARN" ]; then
+          exit 0
+        fi 
+        
+        awsCredentials=$(aws sts assume-role-with-web-identity \
+        --role-session-name "$ROLE_SESSION_NAME" \
+        --role-arn "$ROLE_ARN" \
+        --duration-seconds $DURATION_SECONDS \
+        --web-identity-token "$cognitoIdentityOidcAccessToken")
+        
+        awsAccessKeyId=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
+        awsSecretAccessKey=$(echo "$awsCredentials" | jq -r ".Credentials.SecretAccessKey")
+        awsSessionToken=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
+        
+        echo "::add-mask::$awsAccessKeyId"
+        echo "::add-mask::$awsSecretAccessKey"
+        echo "::add-mask::$awsSessionToken"
+        
+        echo "aws_access_key_id=$awsAccessKeyId" >> "$GITHUB_OUTPUT"
+        echo "aws_secret_access_key=$awsSecretAccessKey" >> "$GITHUB_OUTPUT"
+        echo "aws_session_token=$awsSessionToken" >> "$GITHUB_OUTPUT"
+
+
+    - id: enhanced_auth
+      if: "${{ inputs.auth-flow == 'enhanced' }}"
+      name: "Perform Enhanced AuthFlow"
       shell: bash
       env:
         AWS_ACCOUNT_ID: "${{ steps.aws_account_id.outputs.value }}"
-        AWS_DEFAULT_REGION: "${{ steps.aws_region.outputs.value }}"
-        POOL_ID: "${{ steps.cognito_identity_pool_id.outputs.value }}"
-        CUSTOM_ROLE_ARN: "${{ steps.custom_role_arn.outputs.value }}"
+        AWS_REGION: "${{ steps.aws_region.outputs.value }}"
+        POOL_ID: "${{ inputs.cognito-identity-pool-id }}"
+        ROLE_ARN: "${{ inputs.role-arn }}"
         ACCESS_TOKEN: "${{ steps.token.outputs.token }}"
       run: |
         response=$(aws cognito-identity get-id --identity-pool-id "$POOL_ID" --account-id "$AWS_ACCOUNT_ID" --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
         identityId=$(echo $response | jq -rc '.IdentityId')
+        
+        customRoleArn=""
 
-        if [ ! -z "$CUSTOM_ROLE_ARN" ]; then
-          awsCredentials=$(aws cognito-identity get-credentials-for-identity --identity-id "$identityId" --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}' --custom-role-arn "$CUSTOM_ROLE_ARN")
-        else
-          awsCredentials=$(aws cognito-identity get-credentials-for-identity --identity-id "$identityId" --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
+        if [ ! -z "$ROLE_ARN" ]; then
+          customRoleArn="--custom-role-arn $ROLE_ARN"
         fi
+        
+        awsCredentials=$(aws cognito-identity get-credentials-for-identity \
+        --identity-id "$identityId" \
+        --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}' $customRoleArn)
         
         awsAccessKeyId=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
         awsSecretAccessKey=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
@@ -214,6 +391,155 @@ runs:
         echo "::add-mask::$awsSecretAccessKey"
         echo "::add-mask::$awsSessionToken"
         
+        echo "aws_access_key_id=$awsAccessKeyId" >> "$GITHUB_OUTPUT"
+        echo "aws_secret_access_key=$awsSecretAccessKey" >> "$GITHUB_OUTPUT"
+        echo "aws_session_token=$awsSessionToken" >> "$GITHUB_OUTPUT"
+
+    - id: authenticate
+      name: "Resolve credentials"
+      shell: bash
+      env:
+        AUTH_FLOW: "${{ inputs.auth-flow }}"
+      run: |
+        awsAccessKeyId=""
+        awsSecretAccessKey=""
+        awsSessionToken=""
+        
+        if [ "$AUTH_FLOW" == "basic" ]; then
+          awsAccessKeyId="${{ steps.basic_auth.outputs.aws_access_key_id }}"
+          awsSecretAccessKey="${{ steps.basic_auth.outputs.aws_secret_access_key }}"
+          awsSessionToken="${{ steps.basic_auth.outputs.aws_session_token }}"
+        else
+          awsAccessKeyId="${{ steps.enhanced_auth.outputs.aws_access_key_id }}"
+          awsSecretAccessKey="${{ steps.enhanced_auth.outputs.aws_secret_access_key }}"
+          awsSessionToken="${{ steps.enhanced_auth.outputs.aws_session_token }}"
+        fi
+        
+        echo "aws_access_key_id=$awsAccessKeyId" >> "$GITHUB_OUTPUT"
+        echo "aws_secret_access_key=$awsSecretAccessKey" >> "$GITHUB_OUTPUT"
+        echo "aws_session_token=$awsSessionToken" >> "$GITHUB_OUTPUT"
+
+    # Claim job_workflow_ref and environment is not available via environment variables.
+    # Since this action have already requested the access token for the initial authentication part, it can parse these values from it.
+    # Parsing of access token will only be done if explicitly defining either environment or job_workflow_job in input "chain-pass-claims"
+    - id: missing_claims
+      name: "Resolve values if passing missing claims"
+      if: ${{ inputs.chain-role-arn != '' && inputs.chain-pass-claims != '' }}
+      shell: bash
+      env:
+        ACCESS_TOKEN: "${{ steps.token.outputs.token }}"
+        PASS_CLAIMS: "${{ inputs.chain-pass-claims }}"
+      run: |
+        IFS=', ' read -ra claims <<< "$PASS_CLAIMS"
+        
+        fetchClaims=""
+        
+        for c in "${claims[@]}"; do
+        
+          IFS='=' read -ra parts <<< "$c"
+          claim=${parts[0],,}
+          tagName=${parts[1]}
+        
+          if [ "$claim" == "environment" ] || [ "$claim" == "job_workflow_ref" ]; then
+            fetchClaims="yes"
+          fi
+        
+        done
+        
+        if [ "$fetchClaims" == "" ]; then
+          exit 0
+        fi
+
+        payload=$(echo "$ACCESS_TOKEN" | cut -d '.' -f 2)
+        # Pad the JWT if length would cause issues with base64 decoding.
+        payload=$(awk -vstr="$payload" 'BEGIN {l=length(str)+2; print substr(str"==",1,l-l%4)}' | base64 -d | { cat; echo; })
+        
+        jobWorkflowRefValue=$(echo "$payload" | jq -r '.job_workflow_ref')
+        environmentValue=$(echo "$payload" | jq -r '.environment')
+        
+        echo "job_workflow_ref=$jobWorkflowRefValue" >> "$GITHUB_OUTPUT"
+        echo "environment=$environmentValue" >> "$GITHUB_OUTPUT"
+
+    - id: pass_claims
+      name: "Build tags argument for role chaining"
+      if: ${{ inputs.chain-role-arn != '' && inputs.chain-pass-claims != '' }}
+      env:
+        PASS_CLAIMS: "${{ inputs.chain-pass-claims }}"
+        VALUE_JOB_WORKFLOW_REF: "${{ steps.missing_claims.outputs.job_workflow_ref }}"
+        VALUE_ENVIRONMENT: "${{ steps.missing_claims.outputs.environment }}"
+      shell: bash
+      run: |
+        declare -a supports=("actor" "actor_id" "base_ref" "event_name" "head_ref" "job_workflow_ref" "ref" "ref_type" "repository" "repository_id" "repository_owner" "repository_owner_id" "run_attempt" "run_id" "run_number" "runner_environment" "sha" "environment")
+
+        IFS=', ' read -ra claims <<< "$PASS_CLAIMS"
+
+        tags=()
+        
+        for c in "${claims[@]}"; do
+        
+          IFS='=' read -ra parts <<< "$c"
+          claim=${parts[0],,}
+          tagName=${parts[1]}
+        
+          if [[ ! " ${supports[@]} " =~ " ${claim} " ]]; then
+            echo "Unsupported claim"
+            exit 1
+          fi
+        
+          # Get the value from the environment variable
+          value=""
+        
+          if [ "$claim" == "environment" ]; then
+            value="$VALUE_ENVIRONMENT"
+          elif [ "$claim" == "runner_environment" ]; then
+            value=$RUNNER_ENVIRONMENT
+          elif [ "$claim" == "job_workflow_ref" ]; then
+            value="$VALUE_JOB_WORKFLOW_REF"
+          else
+              value=$(printenv "GITHUB_${claim^^}")
+          fi
+
+          if [ -z "$tagName" ]; then
+              tagName=$claim
+          fi
+
+          tags+=("Key=${tagName},Value=${value}")
+        done
+        
+        echo "value=${tags[@]}" >> "$GITHUB_OUTPUT"
+
+    - id: chain_authenticate
+      shell: bash
+      if: ${{ inputs.chain-role-arn != '' }}
+      env:
+        PASS_CLAIMS: "${{ steps.pass_claims.outputs.value }}"
+        AWS_REGION: "${{ steps.aws_region.outputs.value }}"
+        AWS_ACCESS_KEY_ID: "${{ steps.authenticate.outputs.aws_access_key_id }}"
+        AWS_SECRET_ACCESS_KEY: "${{ steps.authenticate.outputs.aws_secret_access_key }}"
+        AWS_SESSION_TOKEN: "${{ steps.authenticate.outputs.aws_session_token }}"
+        ROLE_ARN: "${{ inputs.chain-role-arn }}"
+        ROLE_SESSION_NAME: "${{ steps.chain_role_session_name.outputs.value }}"
+        DURATION_SECONDS: "${{ steps.chain_duration_seconds.outputs.value }}"
+      run: |
+        passing=""
+        
+        if [ ! -z "$PASS_CLAIMS" ]; then
+          passing="--tags $PASS_CLAIMS"
+        fi
+
+        awsCredentials=$(aws sts assume-role \
+        --role-session-name "$ROLE_SESSION_NAME" \
+        --role-arn "$ROLE_ARN" \
+        --duration-seconds "$DURATION_SECONDS" $passing)
+        
+        awsAccessKeyId=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
+        awsSecretAccessKey=$(echo "$awsCredentials" | jq -r ".Credentials.SecretAccessKey")
+        awsSessionToken=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
+
+        echo "::add-mask::$awsAccessKeyId"
+        echo "::add-mask::$awsSecretAccessKey"
+        echo "::add-mask::$awsSessionToken"
+
         echo "aws_access_key_id=$awsAccessKeyId" >> "$GITHUB_OUTPUT"
         echo "aws_secret_access_key=$awsSecretAccessKey" >> "$GITHUB_OUTPUT"
         echo "aws_session_token=$awsSessionToken" >> "$GITHUB_OUTPUT"
@@ -231,7 +557,57 @@ runs:
       if: ${{ inputs.set-as-profile != '' }}
       shell: bash
       run: |
-        aws configure set profile.${{ steps.profile.outputs.value }}.region ${{ steps.aws_region.outputs.value }}
-        aws configure set profile.${{ steps.profile.outputs.value }}.aws_access_key_id ${{ steps.authenticate.outputs.aws_access_key_id }}
-        aws configure set profile.${{ steps.profile.outputs.value }}.aws_secret_access_key ${{ steps.authenticate.outputs.aws_secret_access_key }}
-        aws configure set profile.${{ steps.profile.outputs.value }}.aws_session_token ${{ steps.authenticate.outputs.aws_session_token }}
+        aws configure set profile.${{ inputs.set-as-profile }}.region ${{ steps.aws_region.outputs.value }}
+        aws configure set profile.${{ inputs.set-as-profile }}.aws_access_key_id ${{ steps.authenticate.outputs.aws_access_key_id }}
+        aws configure set profile.${{ inputs.set-as-profile }}.aws_secret_access_key ${{ steps.authenticate.outputs.aws_secret_access_key }}
+        aws configure set profile.${{ inputs.set-as-profile }}.aws_session_token ${{ steps.authenticate.outputs.aws_session_token }}
+
+    - name: "Set Role Chain Credentials in Environment"
+      if: ${{ inputs.chain-set-in-environment == 'true' }}
+      shell: bash
+
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ steps.chain_authenticate.outputs.aws_access_key_id }}" >> "$GITHUB_ENV"
+        echo "AWS_SECRET_ACCESS_KEY=${{ steps.chain_authenticate.outputs.aws_secret_access_key }}" >> "$GITHUB_ENV"
+        echo "AWS_SESSION_TOKEN=${{ steps.chain_authenticate.outputs.aws_session_token }}" >> "$GITHUB_ENV"
+        echo "AWS_REGION=${{ steps.aws_region.outputs.value }}" >> "$GITHUB_ENV"
+
+    - name: "Set Role Chain Credentials as Profile"
+      if: ${{ inputs.chain-set-as-profile != '' }}
+      shell: bash
+      run: |
+        aws configure set profile.${{ inputs.chain-set-profile-name }}.region ${{ steps.aws_region.outputs.value }}
+        aws configure set profile.${{ inputs.chain-set-profile-name }}.aws_access_key_id ${{ steps.chain_authenticate.outputs.aws_access_key_id }}
+        aws configure set profile.${{ inputs.chain-set-profile-name }}.aws_secret_access_key ${{ steps.chain_authenticate.outputs.aws_secret_access_key }}
+        aws configure set profile.${{ inputs.chain-set-profile-name }}.aws_session_token ${{ steps.chain_authenticate.outputs.aws_session_token }}
+
+    - name: "Output"
+      id: output
+      shell: bash
+      env:
+        ROLE_CHAIN_ARN: "${{ inputs.chain-role-arn }}"
+        AUTH_FLOW: "${{ inputs.auth-flow }}"
+      run: |
+        awsAccessKeyId=""
+        awsSecretAccessKey=""
+        awsSessionToken=""
+        oidcAccessToken=""
+        
+        if [ ! -z "$ROLE_CHAIN_ARN" ]; then
+          awsAccessKeyId="${{ steps.chain_authenticate.outputs.aws_access_key_id }}"
+          awsSecretAccessKey="${{ steps.chain_authenticate.outputs.aws_secret_access_key }}"
+          awsSessionToken="${{ steps.chain_authenticate.outputs.aws_session_token }}"
+        else
+          awsAccessKeyId="${{ steps.authenticate.outputs.aws_access_key_id }}"
+          awsSecretAccessKey="${{ steps.authenticate.outputs.aws_secret_access_key }}"
+          awsSessionToken="${{ steps.authenticate.outputs.aws_session_token }}"
+        fi
+        
+        if [ "$AUTH_FLOW" == "basic" ]; then
+          oidcAccessToken="${{ steps.basic_auth.outputs.oidc_token }}"
+        fi
+        
+        echo "aws_access_key_id=$awsAccessKeyId" >> "$GITHUB_OUTPUT"
+        echo "aws_secret_access_key=$awsSecretAccessKey" >> "$GITHUB_OUTPUT"
+        echo "aws_session_token=$awsSessionToken" >> "$GITHUB_OUTPUT"
+        echo "cognito_oidc_access_token=$oidcAccessToken" >> "$GITHUB_OUTPUT"
