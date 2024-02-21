@@ -121,7 +121,9 @@ If performing a role-chain, those credentials are used as output.
 
 It's possible to pass one or more claims from the initial role session to the next session when role chaining. This is done by specifying one or more GitHub Actions claims in `chain-pass-claims`.
 
-The following claims can be passed by this action: `actor`, `actor_id`, `base_ref`, `event_name`, `head_ref`, `job_workflow_ref`, `ref`, `ref_type`, `repository`, `repository_id`, `repository_owner`, `repository_owner_id`, `run_attempt`, `run_id`, `run_number`, `runner_environment`, `sha`, and `environment`.
+The following claims can be passed by this action: `actor`, `actor_id`, `base_ref`, `event_name`, `head_ref`, `job_workflow_ref`, `ref`, `ref_type`, `repository`, `repository_id`, `repository_name`, `repository_owner`, `repository_owner_id`, `run_attempt`, `run_id`, `run_number`, `runner_environment`, `sha`, and `environment`.
+
+`repository_name` is a special case. GitHub doesn't provide this as a claim, but it's derived from `repository` claim (which is of the form `repository_owner/repository_name`) as it is often used in IAM policies.
 
 | Input                        | Comment                                                                |
 |------------------------------|------------------------------------------------------------------------|

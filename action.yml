@@ -49,7 +49,7 @@ inputs:
   chain-pass-claims:
     default: ""
     required: false
-    description: "Pass claims"
+    description: "Claims from ID token to pass to the role when performing role chaining. Can also include `repository_name`, which will be calculated."
   chain-set-as-profile:
     default: ""
     required: false
@@ -472,7 +472,7 @@ runs:
         VALUE_ENVIRONMENT: "${{ steps.missing_claims.outputs.environment }}"
       shell: bash
       run: |
-        declare -a supports=("actor" "actor_id" "base_ref" "event_name" "head_ref" "job_workflow_ref" "ref" "ref_type" "repository" "repository_id" "repository_owner" "repository_owner_id" "run_attempt" "run_id" "run_number" "runner_environment" "sha" "environment")
+        declare -a supports=("actor" "actor_id" "base_ref" "event_name" "head_ref" "job_workflow_ref" "ref" "ref_type" "repository" "repository_id" "repository_name" "repository_owner" "repository_owner_id" "run_attempt" "run_id" "run_number" "runner_environment" "sha" "environment")
 
         IFS=', ' read -ra claims <<< "$PASS_CLAIMS"
 
@@ -498,6 +498,11 @@ runs:
             value=$RUNNER_ENVIRONMENT
           elif [ "$claim" == "job_workflow_ref" ]; then
             value="$VALUE_JOB_WORKFLOW_REF"
+          elif [ "$claim" == "repository_name" ]; then
+            # The repository name is not available as an environment variable,
+            # so it needs to be parsed from the owner/repo which is in
+            # ${GITHUB_REPOSITORY}
+            value="${GITHUB_REPOSITORY##*/}"
           else
               value=$(printenv "GITHUB_${claim^^}")
           fi
