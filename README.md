@@ -109,8 +109,37 @@ If performing a role-chain, those credentials are used as output.
 | aws_region            |
 
 ## Passing Claims (Session Tags)
+
+It's possible to pass one or more claims from the initial role session to the next session when role chaining. This is done by specifying one or more GitHub Actions claims in `chain-pass-claims`.
+
 > [!WARNING]
-> Make sure the role being assumed allows `sts:TagSession` and that any claims being passed is validated by the trust policy. Not validating the claims could allow a workflow to alter values of the claims.
+> Make sure the role being assumed allows `sts:TagSession` and that any claims being passed are validated by an `sts:AssumeRole` permissions policy. **If this is not done, it might be possible for an attacker to escalate privileges** if they manually make the same calls this action makes, but substitute their own values for the tags when chaining roles.
+
+For example, if `chain-pass-claims` is `job_workflow_ref,repository`, then the following condition could be used in the IAM policy on the initial role:
+
+```json
+{
+  "Sid": "AllowAssumptionIfTagsMatch",
+  "Effect": "Allow",
+  "Action": "sts:AssumeRole",
+  "Resource": "arn:aws:iam::*:role/pattern-matching-the-roles-to-allow-*",
+  "Condition": {
+    "Null": {
+      "aws:TagKeys": "false"
+    },
+    "ForAllValues:StringEquals": {
+      "aws:TagKeys": ["job_workflow_ref", "repository"]
+    },
+    "StringEquals": {
+      "sts:RoleSessionName": "GitHubActions",
+      "aws:PrincipalTag/Repository": "${aws:RequestTag/repository}",
+      "aws:PrincipalTag/job_workflow_ref": "${aws:RequestTag/job_workflow_ref}"
+    }
+  }
+}
+```
+
+This verifies that all the expected tags are set, and that the values match the ones we got from the GitHub token. The principal at this point is the initial role session, with `PrincipalTag` tags set by Cognito from the GitHub Actions claims. The `aws:RequestTag` tags are the tags passed by the caller of `AssumeRole` - i.e. this action or an attacker.
 
 > [!IMPORTANT]
 > The claims job_workflow_ref and environment is not available via an environment variable. Because of this, this action will parse the GitHub Actions access token already available and used in this action to find the value of these claims.
@@ -119,11 +148,15 @@ If performing a role-chain, those credentials are used as output.
 > 
 > Find step with id "missing_claims" in action.yml to view details.
 
-It's possible to pass one or more claims from the initial role session to the next session when role chaining. This is done by specifying one or more GitHub Actions claims in `chain-pass-claims`.
-
 The following claims can be passed by this action: `actor`, `actor_id`, `base_ref`, `event_name`, `head_ref`, `job_workflow_ref`, `ref`, `ref_type`, `repository`, `repository_id`, `repository_name`, `repository_owner`, `repository_owner_id`, `run_attempt`, `run_id`, `run_number`, `runner_environment`, `sha`, and `environment`.
 
-`repository_name` is a special case. GitHub doesn't provide this as a claim, but it's derived from `repository` claim (which is of the form `repository_owner/repository_name`) as it is often used in IAM policies.
+`repository_name` is a special case. GitHub doesn't provide this as a claim, but it's derived from `repository` claim (which is of the form `repository_owner/repository_name`) as it is often used in IAM policies. As above, you **must** validate this claim. You can use a condition like:
+
+```json
+"aws:PrincipalTag/Repository": "${aws:PrincipalTag/repository_owner}/${aws:RequestTag/repository_name}"
+```
+
+to do this. Note that this requires you to also map `repository_owner` in your Cognito Identity Pool.
 
 | Input                        | Comment                                                                |
 |------------------------------|------------------------------------------------------------------------|
