@@ -474,12 +474,17 @@ runs:
       run: |
         declare -a supports=("actor" "actor_id" "base_ref" "event_name" "head_ref" "job_workflow_ref" "ref" "ref_type" "repository" "repository_id" "repository_name" "repository_owner" "repository_owner_id" "run_attempt" "run_id" "run_number" "runner_environment" "sha" "environment")
 
-        IFS=', ' read -ra claims <<< "$PASS_CLAIMS"
+        # Read user-supplied claims into an associative array so we can test if
+        # a claim is requested
+        declare -A claims
+        while IFS=', ' read -r claim; do
+          claims[$claim]=1
+        done <<< "$PASS_CLAIMS"
 
         tags=()
-        
-        for c in "${claims[@]}"; do
-        
+
+        for c in "${!claims[@]}"; do
+
           IFS='=' read -ra parts <<< "$c"
           claim=${parts[0],,}
           tagName=${parts[1]}
@@ -499,6 +504,13 @@ runs:
           elif [ "$claim" == "job_workflow_ref" ]; then
             value="$VALUE_JOB_WORKFLOW_REF"
           elif [ "$claim" == "repository_name" ]; then
+            # Ensure that both `repository` and `repository_owner` are being
+            # passed; they are required to validate repository name with a
+            # condition.
+            if ! [[ -v claims[repository] && -v claims[repository_owner] ]]; then
+              echo "::warning::repository_name is being passed, but repository and repository_owner are not. You need to pass both in order to validate repository name in your IAM policy. Read more: https://github.com/catnekaise/cognito-idpool-auth#passing-repository-name"
+            fi
+
             # The repository name is not available as an environment variable,
             # so it needs to be parsed from the owner/repo which is in
             # ${GITHUB_REPOSITORY}
