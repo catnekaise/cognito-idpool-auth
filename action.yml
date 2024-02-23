@@ -327,19 +327,26 @@ runs:
         ROLE_ARN: "${{ inputs.role-arn }}"
         ROLE_SESSION_NAME: "${{ steps.role_session_name.outputs.value }}"
       run: |
+        echo "Start time: $(date)"
+
         getIdResponse=$(aws cognito-identity get-id --identity-pool-id "$COGNITO_IDENTITY_POOL_ID" \
         --account-id "$AWS_ACCOUNT_ID" \
         --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
         identityId=$(echo "$getIdResponse" | jq -rc '.IdentityId')
 
+        echo "Time after get-id call: $(date)"
+
         cognitoIdentityTokenResponse=$(aws cognito-identity get-open-id-token --identity-id "$identityId" \
         --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
         cognitoIdentityOidcAccessToken=$(echo "$cognitoIdentityTokenResponse" | jq -r '.Token')
         
+        echo "Time after get-open-id-token call: $(date)"
+
         echo "::add-mask::$cognitoIdentityOidcAccessToken"
         echo "oidc_token=$cognitoIdentityOidcAccessToken" >> "$GITHUB_OUTPUT"
         
         if [ -z "$ROLE_ARN" ]; then
+          echo "End time: $(date)"
           exit 0
         fi 
         
@@ -349,6 +356,8 @@ runs:
         --duration-seconds $DURATION_SECONDS \
         --web-identity-token "$cognitoIdentityOidcAccessToken")
         
+        echo "Time after assume-role-with-web-identity call: $(date)"
+
         awsAccessKeyId=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
         awsSecretAccessKey=$(echo "$awsCredentials" | jq -r ".Credentials.SecretAccessKey")
         awsSessionToken=$(echo "$awsCredentials" | jq -r ".Credentials.SessionToken")
@@ -361,6 +370,7 @@ runs:
         echo "aws_secret_access_key=$awsSecretAccessKey" >> "$GITHUB_OUTPUT"
         echo "aws_session_token=$awsSessionToken" >> "$GITHUB_OUTPUT"
 
+        echo "End time: $(date)"
 
     - id: enhanced_auth
       if: "${{ inputs.auth-flow == 'enhanced' }}"
