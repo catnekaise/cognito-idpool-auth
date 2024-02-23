@@ -1,23 +1,25 @@
 # Cognito Identity Pool Authentication
+
 Use this action to perform authentication with an Amazon Cognito Identity Pool using the GitHub Actions OIDC access token. More details about this use-case can be read [here](https://catnekaise.github.io/github-actions-abac-aws/cognito-identity/).
 
 This action supports both `Enhanched (Simplified) AuthFlow` and the `Basic (Classic) AuthFlow`.
 
 ### Table of Contents
 
-* [Usage](#usage)
-* [Standard Input Parameters](#standard-input-parameters)
-* [Role Chain Input Parameters](#role-chain-input-parameters)
-* [Output](#output)
-* [Passing Claims (Session Tags)](#passing-claims-session-tags)
-* [Usage - Role Chain](#usage---role-chain)
-* [Environment Variables](#environment-variables)
-* [Credentials Behaviour](#credentials-behaviour)
-  * [Behaviour when Role Chaining](#behaviour-when-role-chaining)
-* [Custom Role Arn (Enhanced AuthFlow only)](#custom-role-arn-enhanced-authflow-only)
-* [Use as a Template](#use-as-a-template)
-* [Use with a wrapper](#use-with-a-wrapper)
-* [Contributing](#contributing)
+- [Usage](#usage)
+- [Standard Input Parameters](#standard-input-parameters)
+- [Role Chain Input Parameters](#role-chain-input-parameters)
+- [Output](#output)
+- [Passing Claims (Session Tags)](#passing-claims-session-tags)
+  - [Passing Repository Name](#passing-repository-name)
+- [Usage - Role Chain](#usage---role-chain)
+- [Environment Variables](#environment-variables)
+- [Credentials Behaviour](#credentials-behaviour)
+  - [Behaviour when Role Chaining](#behaviour-when-role-chaining)
+- [Custom Role Arn (Enhanced AuthFlow only)](#custom-role-arn-enhanced-authflow-only)
+- [Use as a Template](#use-as-a-template)
+- [Use with a wrapper](#use-with-a-wrapper)
+- [Contributing](#contributing)
 
 ## Usage
 
@@ -150,14 +152,6 @@ This verifies that all the expected tags are set, and that the values match the 
 
 The following claims can be passed by this action: `actor`, `actor_id`, `base_ref`, `event_name`, `head_ref`, `job_workflow_ref`, `ref`, `ref_type`, `repository`, `repository_id`, `repository_name`, `repository_owner`, `repository_owner_id`, `run_attempt`, `run_id`, `run_number`, `runner_environment`, `sha`, and `environment`.
 
-`repository_name` is a special case. GitHub doesn't provide this as a claim, but it's derived from `repository` claim (which is of the form `repository_owner/repository_name`) as it is often used in IAM policies. As above, you **must** validate this claim. You can use a condition like:
-
-```json
-"aws:PrincipalTag/Repository": "${aws:PrincipalTag/repository_owner}/${aws:RequestTag/repository_name}"
-```
-
-to do this. Note that this requires you to also map `repository_owner` in your Cognito Identity Pool.
-
 | Input                        | Comment                                                                |
 |------------------------------|------------------------------------------------------------------------|
 | repository                   | Becomes --tags Key=repository,Value=${{ github.repository }}           |
@@ -166,6 +160,22 @@ to do this. Note that this requires you to also map `repository_owner` in your C
 | repository=foo               | Explicitly set tag name. --tags Key=foo,Value=${{ github.repository }} |
 | repository=foo,actor, run_id | Only change tag name for one claim                                     |
 
+### Passing Repository Name
+
+`repository_name` is a special case. GitHub doesn't provide this as a claim, but it's derived from `repository` claim (which is of the form `repository_owner/repository_name`) as it is often used in IAM policies. As above, you **must** validate this claim. You can use a condition like:
+
+```json
+{
+  "StringEquals": {
+     // Validate repository_name
+    "aws:PrincipalTag/repository": "${aws:RequestTag/repository_owner}/${aws:RequestTag/repository_name}",
+     // Add if wanting to continue using the claim
+    "aws:RequestTag/repository": "${aws:PrincipalTag/repository}"
+  }
+}
+```
+
+to do this. Note that this requires you to also map `repository` and `repository_owner` in your Cognito Identity Pool.
 
 ## Usage - Role Chain
 
