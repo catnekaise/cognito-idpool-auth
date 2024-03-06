@@ -474,16 +474,27 @@ runs:
       run: |
         declare -a supports=("actor" "actor_id" "base_ref" "event_name" "head_ref" "job_workflow_ref" "ref" "ref_type" "repository" "repository_id" "repository_name" "repository_owner" "repository_owner_id" "run_attempt" "run_id" "run_number" "runner_environment" "sha" "environment")
 
+        # Make sure PASS_CLAIMS ends with a comma, so we read all the claims
+        PASS_CLAIMS="${PASS_CLAIMS%,},"
+
         # Read user-supplied claims into an associative array so we can test if
         # a claim is requested
         declare -A claims
-        while IFS=', ' read -r claim; do
-          claims[$claim]=1
-        done <<< "$PASS_CLAIMS"
+        while IFS=' ' read -r -d',' pass_claim; do
+          if [ -z "${pass_claim}" ]; then
+            continue
+          fi
+
+          # Split the claim at '=' and take the first part. This could be e.g.
+          # `repository=repo`, and we want to know if the user has mapped
+          # `repository`.
+          claim_name="${pass_claim%%=*}"
+          claims[${claim_name}]="${pass_claim}"
+        done <<< "${PASS_CLAIMS}"
 
         tags=()
 
-        for c in "${!claims[@]}"; do
+        for c in "${claims[@]}"; do
 
           IFS='=' read -ra parts <<< "$c"
           claim=${parts[0],,}
