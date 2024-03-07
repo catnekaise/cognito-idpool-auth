@@ -515,11 +515,11 @@ runs:
           elif [ "$claim" == "job_workflow_ref" ]; then
             value="$VALUE_JOB_WORKFLOW_REF"
           elif [ "$claim" == "repository_name" ]; then
-            # Ensure that both `repository` and `repository_owner` are being
+            # Ensure that one of `repository` or `repository_owner` is being
             # passed; they are required to validate repository name with a
             # condition.
-            if ! [[ -v claims[repository] && -v claims[repository_owner] ]]; then
-              echo "::warning::repository_name is being passed, but repository and repository_owner are not. You need to pass both in order to validate repository name in your IAM policy. Read more: https://github.com/catnekaise/cognito-idpool-auth#passing-repository-name"
+            if ! [[ -v claims[repository] || -v claims[repository_owner] ]]; then
+              echo "::warning::repository_name is being passed, but neither repository nor repository_owner are. At least one of these should be passed, so you can match the GitHub organization in your IAM policies. Read more: https://github.com/catnekaise/cognito-idpool-auth#passing-repository-name"
             fi
 
             # The repository name is not available as an environment variable,
