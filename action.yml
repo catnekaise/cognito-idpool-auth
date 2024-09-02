@@ -443,7 +443,7 @@ runs:
           claim=${parts[0],,}
           tagName=${parts[1]}
         
-          if [ "$claim" == "environment" ] || [ "$claim" == "job_workflow_ref" ]; then
+          if [ "$claim" == "environment" ] || [ "$claim" == "job_workflow_ref" ] || [ "$claim" == "workflow_ref" ]; then
             fetchClaims="yes"
           fi
         
@@ -457,9 +457,11 @@ runs:
         # Pad the JWT if length would cause issues with base64 decoding.
         payload=$(awk -vstr="$payload" 'BEGIN {l=length(str)+2; print substr(str"==",1,l-l%4)}' | base64 -d | { cat; echo; })
         
+        workflowRefValue=$(echo "$payload" | jq -r '.workflow_ref')
         jobWorkflowRefValue=$(echo "$payload" | jq -r '.job_workflow_ref')
         environmentValue=$(echo "$payload" | jq -r '.environment')
         
+        echo "workflow_ref=$workflowRefValue" >> "$GITHUB_OUTPUT"
         echo "job_workflow_ref=$jobWorkflowRefValue" >> "$GITHUB_OUTPUT"
         echo "environment=$environmentValue" >> "$GITHUB_OUTPUT"
 
@@ -468,11 +470,12 @@ runs:
       if: ${{ inputs.chain-role-arn != '' && inputs.chain-pass-claims != '' }}
       env:
         PASS_CLAIMS: "${{ inputs.chain-pass-claims }}"
+        VALUE_WORKFLOW_REF: "${{ steps.missing_claims.outputs.workflow_ref }}"
         VALUE_JOB_WORKFLOW_REF: "${{ steps.missing_claims.outputs.job_workflow_ref }}"
         VALUE_ENVIRONMENT: "${{ steps.missing_claims.outputs.environment }}"
       shell: bash
       run: |
-        declare -a supports=("actor" "actor_id" "base_ref" "event_name" "head_ref" "job_workflow_ref" "ref" "ref_type" "repository" "repository_id" "repository_name" "repository_owner" "repository_owner_id" "run_attempt" "run_id" "run_number" "runner_environment" "sha" "environment")
+        declare -a supports=("actor" "actor_id" "base_ref" "event_name" "head_ref" "workflow_ref" "job_workflow_ref" "ref" "ref_type" "repository" "repository_id" "repository_name" "repository_owner" "repository_owner_id" "run_attempt" "run_id" "run_number" "runner_environment" "sha" "environment")
 
         # Make sure PASS_CLAIMS ends with a comma, so we read all the claims
         PASS_CLAIMS="${PASS_CLAIMS%,},"
@@ -514,6 +517,8 @@ runs:
             value=$RUNNER_ENVIRONMENT
           elif [ "$claim" == "job_workflow_ref" ]; then
             value="$VALUE_JOB_WORKFLOW_REF"
+          elif [ "$claim" == "workflow_ref" ]; then
+            value="$VALUE_WORKFLOW_REF"
           elif [ "$claim" == "repository_name" ]; then
             # Ensure that one of `repository` or `repository_owner` is being
             # passed; they are required to validate repository name with a
