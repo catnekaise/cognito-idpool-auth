@@ -94,6 +94,7 @@ runs:
       env:
         AUTH_FLOW: "${{ inputs.auth-flow }}"
         COGNITO_POOL_ID: "${{ inputs.cognito-identity-pool-id }}"
+        COGNITO_IDENTITY_PROVIDER_NAME: "${{ inputs.cognito-identity-provider-name }}"
         ROLE_ARN: "${{ inputs.role-arn }}"
         CHAIN_ROLE_ARN: "${{ inputs.chain-role-arn }}"
         SET_IN_ENVIRONMENT: "${{ inputs.set-in-environment }}"
@@ -110,6 +111,11 @@ runs:
         
         if echo "$COGNITO_POOL_ID" | grep -Eqv "^[a-z]{2}-[a-z]{4,9}-[0-9]:[0-9a-f-]+$"; then
           echo "Value for Cognito Pool Id is invalid"
+          exit 1
+        fi
+
+        if echo "$COGNITO_IDENTITY_PROVIDER_NAME" | grep -Eqv "^token\.actions\.githubusercontent\.com(\/[a-zA-Z0-9-]+)?$"; then
+          echo "Value for Congito Identity Provider Name is invalid"
           exit 1
         fi
         
