@@ -61,21 +61,23 @@ jobs:
 ## Standard Input Parameters
 
 - `cognito-identity-pool-id` and `auth-flow` are required.
+- `cognito-identity-provider-name` can be used if [issuer OIDC claim is customized](https://docs.github.com/en/enterprise-cloud@latest/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#customizing-the-issuer-value-for-an-enterprise).
 - `aws-account-id` and `aws-region` are required, but values can optionally be derived from environment variables, if this behaviour is wanted.
 - If providing `role-arn` and `auth-flow` is `enhanced`, then `aws-account-id` can be extracted from the ARN.
 - Input to action via parameters will supersede environment variables for `aws-account-id` and `aws-region`.
   - **Env Var 1** supersedes **Env Var 2**.
 
-| Input Parameter Name     | Default                        | Example                             | Env Var 1                 | Env Var 2          |
-|--------------------------|--------------------------------|-------------------------------------|---------------------------|--------------------|
-| cognito-identity-pool-id | -                              | eu-west-1:11111111-example          | -                         | -                  |
-| auth-flow                | -                              | basic or enhanced                   | -                         | -                  |
-| aws-account-id           | -                              | 1111111111111                       | CK_COGNITO_AWS_ACCOUNT_ID | AWS_ACCOUNT_ID     |
-| aws-region               | -                              | eu-west-1                           | AWS_REGION                | AWS_DEFAULT_REGION |
-| audience                 | cognito-identity.amazonaws.com | cognito-identity.amazonaws.com      | -                         | -                  |
-| role-arn                 | -                              | arn:aws:iam::111111111111:role/role | -                         | -                  |
-| set-as-profile           | -                              | cache                               | -                         | -                  |
-| set-in-environment       | -                              | true                                | -                         | -                  |
+| Input Parameter Name           | Default                             | Example                             | Env Var 1                 | Env Var 2          |
+|--------------------------------|-------------------------------------|-------------------------------------|---------------------------|--------------------|
+| cognito-identity-pool-id       | -                                   | eu-west-1:11111111-example          | -                         | -                  |
+| cognito-identity-provider-name | token.actions.githubusercontent.com | token.actions.githubusercontent.com | -                         | -                  |
+| auth-flow                      | -                                   | basic or enhanced                   | -                         | -                  |
+| aws-account-id                 | -                                   | 1111111111111                       | CK_COGNITO_AWS_ACCOUNT_ID | AWS_ACCOUNT_ID     |
+| aws-region                     | -                                   | eu-west-1                           | AWS_REGION                | AWS_DEFAULT_REGION |
+| audience                       | cognito-identity.amazonaws.com      | cognito-identity.amazonaws.com      | -                         | -                  |
+| role-arn                       | -                                   | arn:aws:iam::111111111111:role/role | -                         | -                  |
+| set-as-profile                 | -                                   | cache                               | -                         | -                  |
+| set-in-environment             | -                                   | true                                | -                         | -                  |
 
 
 ## Basic AuthFlow Parameters

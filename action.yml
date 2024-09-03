@@ -10,6 +10,10 @@ inputs:
   auth-flow:
     required: true
     description: "Either basic or enhanced"
+  cognito-identity-provider-name:
+    required: false
+    default: "token.actions.githubusercontent.com"
+    description: "Name of the Congito Identity Provider Name. Can be used in case custom issuer is configured in GitHub Enterprise Cloud."
   audience:
     default: "cognito-identity.amazonaws.com"
     required: false
@@ -90,6 +94,7 @@ runs:
       env:
         AUTH_FLOW: "${{ inputs.auth-flow }}"
         COGNITO_POOL_ID: "${{ inputs.cognito-identity-pool-id }}"
+        COGNITO_IDENTITY_PROVIDER_NAME: "${{ inputs.cognito-identity-provider-name }}"
         ROLE_ARN: "${{ inputs.role-arn }}"
         CHAIN_ROLE_ARN: "${{ inputs.chain-role-arn }}"
         SET_IN_ENVIRONMENT: "${{ inputs.set-in-environment }}"
@@ -106,6 +111,11 @@ runs:
         
         if echo "$COGNITO_POOL_ID" | grep -Eqv "^[a-z]{2}-[a-z]{4,9}-[0-9]:[0-9a-f-]+$"; then
           echo "Value for Cognito Pool Id is invalid"
+          exit 1
+        fi
+
+        if echo "$COGNITO_IDENTITY_PROVIDER_NAME" | grep -Eqv "^token\.actions\.githubusercontent\.com(\/[a-zA-Z0-9-]+)?$"; then
+          echo "Value for Congito Identity Provider Name is invalid"
           exit 1
         fi
         
@@ -323,17 +333,18 @@ runs:
         AWS_ACCOUNT_ID: "${{ steps.aws_account_id.outputs.value }}"
         AWS_REGION: "${{ steps.aws_region.outputs.value }}"
         COGNITO_IDENTITY_POOL_ID: "${{ inputs.cognito-identity-pool-id }}"
+        COGNITO_IDENTITY_PROVIDER_NAME: "${{ inputs.cognito-identity-provider-name }}"
         DURATION_SECONDS: "${{ steps.duration_seconds.outputs.value }}"
         ROLE_ARN: "${{ inputs.role-arn }}"
         ROLE_SESSION_NAME: "${{ steps.role_session_name.outputs.value }}"
       run: |
         getIdResponse=$(aws cognito-identity get-id --identity-pool-id "$COGNITO_IDENTITY_POOL_ID" \
         --account-id "$AWS_ACCOUNT_ID" \
-        --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
+        --logins '{"'"$COGNITO_IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
         identityId=$(echo "$getIdResponse" | jq -rc '.IdentityId')
 
         cognitoIdentityTokenResponse=$(aws cognito-identity get-open-id-token --identity-id "$identityId" \
-        --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
+        --logins '{"'"$COGNITO_IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
         cognitoIdentityOidcAccessToken=$(echo "$cognitoIdentityTokenResponse" | jq -r '.Token')
         
         echo "::add-mask::$cognitoIdentityOidcAccessToken"
@@ -370,10 +381,14 @@ runs:
         AWS_ACCOUNT_ID: "${{ steps.aws_account_id.outputs.value }}"
         AWS_REGION: "${{ steps.aws_region.outputs.value }}"
         POOL_ID: "${{ inputs.cognito-identity-pool-id }}"
+        IDENTITY_PROVIDER_NAME: "${{ inputs.cognito-identity-provider-name }}"
         ROLE_ARN: "${{ inputs.role-arn }}"
         ACCESS_TOKEN: "${{ steps.token.outputs.token }}"
       run: |
-        response=$(aws cognito-identity get-id --identity-pool-id "$POOL_ID" --account-id "$AWS_ACCOUNT_ID" --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}')
+        response=$(aws cognito-identity get-id \
+        --identity-pool-id "$POOL_ID" \
+        --account-id "$AWS_ACCOUNT_ID" \
+        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}')
         identityId=$(echo $response | jq -rc '.IdentityId')
         
         customRoleArn=""
@@ -384,7 +399,7 @@ runs:
         
         awsCredentials=$(aws cognito-identity get-credentials-for-identity \
         --identity-id "$identityId" \
-        --logins '{"token.actions.githubusercontent.com":"'"$ACCESS_TOKEN"'"}' $customRoleArn)
+        --logins '{"'"$IDENTITY_PROVIDER_NAME"'":"'"$ACCESS_TOKEN"'"}' $customRoleArn)
         
         awsAccessKeyId=$(echo "$awsCredentials" | jq -r ".Credentials.AccessKeyId")
         awsSecretAccessKey=$(echo "$awsCredentials" | jq -r ".Credentials.SecretKey")
